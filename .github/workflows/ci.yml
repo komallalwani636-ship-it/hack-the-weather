@@ -1,0 +1,170 @@
+# CI workflow for Conduit Sentinel
+# Requirements: 2.2, 2.5, 17.3, 17.6
+#
+# Jobs:
+#   lint   — runs ruff and black --check on src/ and tests/ (every push + PR to main)
+#   test   — installs requirements.txt and runs pytest (depends on lint)
+#   deploy — placeholder deploy step (push to main only, depends on test)
+
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - main
+
+# Cancel any in-progress run on the same branch when a new push is made,
+# keeping only the latest run. For PRs, concurrency key includes the PR number
+# so concurrent PRs do not cancel each other.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # lint: ruff + black --check on src/ and tests/
+  # Satisfies requirements 2.5 (lint/format gate on every PR) and 17.3
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint (ruff + black)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install linters
+        run: pip install ruff==0.4.10 black==24.4.2
+
+      - name: Run ruff
+        run: ruff check src/ tests/
+
+      - name: Run black (check mode)
+        run: black --check src/ tests/
+
+  # ---------------------------------------------------------------------------
+  # test: install deps from requirements.txt and run pytest
+  # Satisfies requirements 2.2 (pytest exits 0 in fresh Python 3.11 venv) and 17.6
+  # The job fails and reports a non-zero status check if any test fails.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test (pytest)
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11 (with pip cache)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pytest
+        run: pytest tests/ -v --tb=short
+
+  # ---------------------------------------------------------------------------
+  # deploy: push Docker image to Render and web/ build to Vercel
+  # Runs only on push to main (after tests pass).
+  # Satisfies requirements 2.2, 17.3
+  #
+  # Required GitHub Actions secrets (Settings → Secrets and variables → Actions):
+  #   RENDER_DEPLOY_HOOK_URL — Render dashboard → your service → Settings →
+  #                            Deploy Hook → copy the URL
+  #   VERCEL_TOKEN           — vercel.com → Account Settings → Tokens → Create
+  #   VERCEL_ORG_ID          — run `vercel whoami --token <token>` or check
+  #                            vercel.com → Settings → General → Team ID
+  #   VERCEL_PROJECT_ID      — vercel.com → your project → Settings → General →
+  #                            Project ID (or found in .vercel/project.json after
+  #                            `vercel link`)
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy (Render + Vercel)
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Step 1 — Deploy API to Render via deploy hook
+      # -----------------------------------------------------------------------
+      - name: Trigger Render redeploy
+        run: |
+          curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+
+      - name: Wait for Render service to become healthy
+        run: |
+          # Extract the base service URL from the deploy hook URL:
+          # hook format is https://api.render.com/deploy/<svc-id>?key=...
+          # The public service URL is a separate secret; poll /health directly.
+          echo "Waiting 30 s for Render to start the new deploy..."
+          sleep 30
+
+          ATTEMPTS=5
+          INTERVAL=30
+          for i in $(seq 1 $ATTEMPTS); do
+            echo "Health check attempt $i / $ATTEMPTS..."
+            STATUS=$(curl -fsS -o /dev/null -w "%{http_code}" \
+              "${{ secrets.RENDER_SERVICE_URL }}/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Render service is healthy (HTTP 200)."
+              exit 0
+            fi
+            echo "Got HTTP $STATUS — retrying in ${INTERVAL}s..."
+            sleep $INTERVAL
+          done
+
+          echo "Render service did not become healthy after $ATTEMPTS attempts."
+          exit 1
+
+      # -----------------------------------------------------------------------
+      # Step 2 — Deploy frontend (web/) to Vercel
+      # -----------------------------------------------------------------------
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Pull Vercel environment / project config
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: web
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Build for production
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: web
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Deploy prebuilt output to Vercel
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: web
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

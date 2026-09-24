@@ -1,0 +1,34 @@
+# Conduit Sentinel — full-stack compose
+# Starts API (port 8000) and frontend dev server (port 5173).
+# Secrets are read from .env at the repo root; copy .env.example → .env first.
+#
+#   docker compose up --build
+#   Open http://localhost:5173  (dashboard)
+#        http://localhost:8000/docs  (API)
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    env_file:
+      - ./web/.env
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    restart: unless-stopped

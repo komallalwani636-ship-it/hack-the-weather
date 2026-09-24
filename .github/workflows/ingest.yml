@@ -1,0 +1,41 @@
+# Hourly ingest + keep-alive ping. Secrets come from GitHub Actions encrypted secrets only.
+name: Ingest
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    if: github.event.schedule == '0 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Run collectors
+        env:
+          CONDUIT_EMAIL: ${{ secrets.CONDUIT_EMAIL }}
+          CONDUIT_PASSWORD: ${{ secrets.CONDUIT_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python -m src.ingest.scheduler
+
+  keepalive:
+    if: github.event.schedule == '*/10 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health
+        env:
+          API_URL: ${{ secrets.API_URL }}
+        run: |
+          if [ -n "$API_URL" ]; then
+            curl -fsS "$API_URL/health" || exit 1
+          else
+            echo "API_URL secret not set; skip keep-alive"
+          fi

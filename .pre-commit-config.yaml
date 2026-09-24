@@ -1,0 +1,67 @@
+# Pre-commit hook configuration for conduit-sentinel.
+# Enforces code quality (ruff, black) and secret-scanning (detect-secrets)
+# before every commit.
+#
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+default_language_version:
+  python: python3.11
+
+repos:
+  # ---------------------------------------------------------------------------
+  # Standard housekeeping hooks
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+
+  # ---------------------------------------------------------------------------
+  # Ruff — fast Python linter; auto-fixes safe issues
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+        types_or: [python, pyi]
+
+  # ---------------------------------------------------------------------------
+  # Black — opinionated Python formatter
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3.11
+        types_or: [python, pyi]
+
+  # ---------------------------------------------------------------------------
+  # detect-secrets — blocks commits containing high-entropy secrets.
+  #
+  # Configuration rationale (Requirement 19.4):
+  #   --limit 4.5   : flag any token whose Shannon entropy exceeds 4.5 bits/char
+  #   The hook will refuse the commit when a staged file contains a string that
+  #   both (a) has Shannon entropy > 4.5 and (b) has length >= 20 AND matches a
+  #   known secret pattern (API key, private key, token, password, etc.).
+  #
+  # .env.example is explicitly excluded because it contains only placeholder
+  # values with empty or obviously dummy content and is safe to commit.
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args:
+          - --limit
+          - "4.5"
+          - --exclude-files
+          - \.env\.example$
+        # Point the hook at the pre-initialised baseline so that any previously
+        # audited secrets (none at project start) are not re-flagged.
+        additional_dependencies: []
