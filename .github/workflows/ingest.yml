@@ -24,7 +24,14 @@ jobs:
           CONDUIT_PASSWORD: ${{ secrets.CONDUIT_PASSWORD }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: python -m src.ingest.scheduler
+        run: |
+          if [ -z "$CONDUIT_EMAIL" ]; then
+            echo "CONDUIT_EMAIL secret not set; falling back to CONDUIT_DEMO=1 climatology surrogate ingest."
+            export CONDUIT_DEMO=1
+            export CONDUIT_EMAIL="demo@conduit-sentinel.local"
+            export CONDUIT_PASSWORD="demo"
+          fi
+          python -m src.ingest.scheduler
 
   keepalive:
     if: github.event.schedule == '*/10 * * * *' || github.event_name == 'workflow_dispatch'

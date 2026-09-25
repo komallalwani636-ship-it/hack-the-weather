@@ -211,7 +211,6 @@ def irrigation(crop: str = "maize", stage: str = "mid"):
     }
 
 
-
 @app.get("/advisories")
 def advisories():
     items = [a.to_dict() for a in store.advisories]

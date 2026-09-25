@@ -79,7 +79,12 @@ def run_all() -> list[CollectionResult]:
             msg = f"[{datetime.now(tz=timezone.utc).isoformat()}] {name}: {exc}"
             logger.error(msg)
             write_actions_summary(msg)
-            raise
+            result = CollectionResult(
+                source=name,
+                records_fetched=0,
+                records_written=0,
+                errors=[str(exc)],
+            )
         results.append(result)
         if result.errors:
             for err in result.errors:

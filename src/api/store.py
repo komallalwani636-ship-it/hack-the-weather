@@ -160,13 +160,15 @@ class AppStore:
                 if p_prob > 1.0:
                     p_prob = p_prob / 100.0
                 cond = "Scattered Showers" if p_prob > 0.4 else "Partly Cloudy" if p_prob > 0.15 else "Clear & Sunny"
-                daily_items.append({
-                    "date": d_str,
-                    "temp_min_c": round(min_t or 16.5, 1),
-                    "temp_max_c": round(max_t or 26.5, 1),
-                    "precip_prob": round(p_prob or 0.0, 2),
-                    "condition_text": cond,
-                })
+                daily_items.append(
+                    {
+                        "date": d_str,
+                        "temp_min_c": round(min_t or 16.5, 1),
+                        "temp_max_c": round(max_t or 26.5, 1),
+                        "precip_prob": round(p_prob or 0.0, 2),
+                        "condition_text": cond,
+                    }
+                )
 
         # Ensure at least 3 days for display by forward-projecting Juja microclimate
         if daily_items:
@@ -175,13 +177,15 @@ class AppStore:
             base_max = daily_items[-1]["temp_max_c"]
             while len(daily_items) < 5:
                 last_date += timedelta(days=1)
-                daily_items.append({
-                    "date": last_date.strftime("%Y-%m-%d"),
-                    "temp_min_c": round(base_min + (0.4 if len(daily_items) % 2 == 0 else -0.3), 1),
-                    "temp_max_c": round(base_max + (0.6 if len(daily_items) % 2 == 0 else -0.5), 1),
-                    "precip_prob": 0.15 if len(daily_items) % 2 == 0 else 0.25,
-                    "condition_text": "Partly Cloudy" if len(daily_items) % 2 == 0 else "Isolated Showers",
-                })
+                daily_items.append(
+                    {
+                        "date": last_date.strftime("%Y-%m-%d"),
+                        "temp_min_c": round(base_min + (0.4 if len(daily_items) % 2 == 0 else -0.3), 1),
+                        "temp_max_c": round(base_max + (0.6 if len(daily_items) % 2 == 0 else -0.5), 1),
+                        "precip_prob": 0.15 if len(daily_items) % 2 == 0 else 0.25,
+                        "condition_text": "Partly Cloudy" if len(daily_items) % 2 == 0 else "Isolated Showers",
+                    }
+                )
 
         return {
             "forecast": items,

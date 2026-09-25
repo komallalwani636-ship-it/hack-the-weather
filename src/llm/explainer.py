@@ -349,9 +349,21 @@ class LLMExplainer:
 
         # 0. Conversational Greeting & Agent Identity Intent
         greetings = (
-            "hello", "hi", "hey", "habari", "hujambo", "mambo", "sasa",
-            "good morning", "good afternoon", "good evening", "greetings",
-            "who are you", "what can you do", "help", "jambo"
+            "hello",
+            "hi",
+            "hey",
+            "habari",
+            "hujambo",
+            "mambo",
+            "sasa",
+            "good morning",
+            "good afternoon",
+            "good evening",
+            "greetings",
+            "who are you",
+            "what can you do",
+            "help",
+            "jambo",
         )
         is_greeting = any(
             q == g or q.startswith(g + " ") or (" " + g in q) or q.startswith(g + "!") or q.startswith(g + "?")
@@ -389,7 +401,18 @@ class LLMExplainer:
                 )
 
         # 0b. Science, Physics & Methodology Inquiries
-        if any(tok in q for tok in ("how do you calculate", "what is fao", "what is et0", "penman", "evapotranspiration", "equation", "formula")):
+        if any(
+            tok in q
+            for tok in (
+                "how do you calculate",
+                "what is fao",
+                "what is et0",
+                "penman",
+                "evapotranspiration",
+                "equation",
+                "formula",
+            )
+        ):
             return (
                 f"FAO-56 Penman-Monteith Agronomic Physics Model:\n"
                 f"Conduit Sentinel calculates reference evapotranspiration (ET0) using the standardized FAO-56 Penman-Monteith combination equation:\n\n"
@@ -403,7 +426,10 @@ class LLMExplainer:
             )
 
         # 0c. Hardware & Station Sensor Array Inquiries
-        if any(tok in q for tok in ("what sensors", "hardware", "dual tipping", "rain gauge", "sht31", "si1145", "station rig")):
+        if any(
+            tok in q
+            for tok in ("what sensors", "hardware", "dual tipping", "rain gauge", "sht31", "si1145", "station rig")
+        ):
             return (
                 f"JKUAT Conduit Weather Station Hardware Architecture:\n"
                 f"Our solar-powered microclimate rig at JKUAT is equipped with industrial precision sensors:\n\n"
@@ -417,7 +443,18 @@ class LLMExplainer:
             )
 
         # 1. Irrigation & Water Requirement Intent
-        irr_tokens = ("irrigat", "water", "kumwagilia", "maji", "deficit", "soil", "udongo", "moisture", "shamba", "et0")
+        irr_tokens = (
+            "irrigat",
+            "water",
+            "kumwagilia",
+            "maji",
+            "deficit",
+            "soil",
+            "udongo",
+            "moisture",
+            "shamba",
+            "et0",
+        )
         if any(tok in q for tok in irr_tokens):
             if is_sw:
                 if irr_required:
@@ -563,4 +600,3 @@ class LLMExplainer:
                 f"Operational Summary: Telemetry is continuously acquired from the Conduit station and validated via automated QC. "
                 f"Ask specific questions about irrigation requirements, spraying windows, or field safety for detailed guidance."
             )
-
