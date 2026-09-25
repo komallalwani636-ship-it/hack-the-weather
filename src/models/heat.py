@@ -60,10 +60,17 @@ When the station WBGT sensor is flagged, WBGT is estimated with the Bernard simp
     ) -> HeatStressResult:
         source = "station"
         value = wbgt_c
-        if qc_flag != "OK" or value is None:
-            if temp_c is None or rh_pct is None:
-                value = 20.0
-            else:
-                value = self.estimated_wbgt(temp_c, rh_pct)
+        is_bad = (
+            qc_flag != "OK" or value is None or (isinstance(value, float) and (math.isnan(value) or math.isinf(value)))
+        )
+        if is_bad:
+            t = float(temp_c) if temp_c is not None and not (isinstance(temp_c, float) and math.isnan(temp_c)) else 24.0
+            rh = (
+                float(rh_pct) if rh_pct is not None and not (isinstance(rh_pct, float) and math.isnan(rh_pct)) else 65.0
+            )
+            value = self.estimated_wbgt(t, rh)
             source = "estimated"
-        return HeatStressResult(level=self.classify(float(value)), wbgt_c=float(value), wbgt_source=source)
+        clean_val = float(value)
+        if math.isnan(clean_val) or math.isinf(clean_val):
+            clean_val = 20.0
+        return HeatStressResult(level=self.classify(clean_val), wbgt_c=clean_val, wbgt_source=source)

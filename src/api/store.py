@@ -51,14 +51,26 @@ class AppStore:
     def _recompute_state(self) -> None:
         self.et0_model.reset()
         latest = self.latest_row()
-        rain = float(latest.get("rain_gauge_1_mm") or 0.0)
+        rain = _f(latest.get("rain_gauge_1_mm")) or 0.0
+        temp_val = _f(latest.get("temp_sht_c"))
+        if temp_val is None:
+            temp_val = _f(latest.get("om_temp")) or 22.0
+        rh_val = _f(latest.get("humidity_sht_pct"))
+        if rh_val is None:
+            rh_val = _f(latest.get("om_rh")) or 70.0
+        wind_val = _f(latest.get("wind_speed_ms"))
+        if wind_val is None:
+            wind_val = _f(latest.get("om_wind")) or 2.0
+        pressure_val = _f(latest.get("pressure_hpa")) or 1013.0
+        sw_val = _f(latest.get("si1145_visible")) or 0.0
+
         advice = self.et0_model.step(
             rain_mm=rain * 24 * 12 / 12,  # 5-min rain → crude daily mm
-            temp_c=float(latest.get("temp_sht_c") or 22.0),
-            rh_pct=float(latest.get("humidity_sht_pct") or 70.0),
-            wind_ms=float(latest.get("wind_speed_ms") or 2.0),
-            pressure_hpa=float(latest.get("pressure_hpa") or 1013.0),
-            sw_wm2=float(latest.get("si1145_visible") or 0) * (800 / 65535),
+            temp_c=temp_val,
+            rh_pct=rh_val,
+            wind_ms=wind_val,
+            pressure_hpa=pressure_val,
+            sw_wm2=sw_val * (800 / 65535),
             qc_flags={"temp_c": latest.get("qc_flag", "OK")},
         )
         self.irrigation = advice

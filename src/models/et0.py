@@ -8,11 +8,38 @@ from typing import Any
 
 from src.paths import MODELS_DIR
 
-DEFAULT_KC = {
+DEFAULT_KC: dict[str, dict[str, float]] = {
     "maize": {"initial": 0.3, "mid": 1.2, "late": 0.6},
     "beans": {"initial": 0.4, "mid": 1.15, "late": 0.35},
     "pasture": {"initial": 0.4, "mid": 0.95, "late": 0.85},
+    "cabbage": {"initial": 0.45, "mid": 1.05, "late": 0.95},
+    "potatoes": {"initial": 0.5, "mid": 1.15, "late": 0.75},
+    "coffee": {"initial": 0.9, "mid": 1.05, "late": 0.95},
+    "tomatoes": {"initial": 0.6, "mid": 1.15, "late": 0.8},
+    "bananas": {"initial": 0.5, "mid": 1.10, "late": 1.0},
 }
+
+
+def _safe_float(
+    val: Any,
+    default: float = 0.0,
+    vmin: float | None = None,
+    vmax: float | None = None,
+) -> float:
+    """Sanitize float input against None, NaN, and Inf with optional boundary clamping."""
+    if val is None:
+        res = default
+    else:
+        try:
+            f = float(val)
+            res = default if (math.isnan(f) or math.isinf(f)) else f
+        except (ValueError, TypeError):
+            res = default
+    if vmin is not None and res < vmin:
+        res = vmin
+    if vmax is not None and res > vmax:
+        res = vmax
+    return float(res)
 
 
 @dataclass
@@ -50,6 +77,11 @@ Default Kc values:
 - maize: initial 0.3, mid 1.2, late 0.6
 - beans: initial 0.4, mid 1.15, late 0.35
 - pasture: initial 0.4, mid 0.95, late 0.85
+- cabbage: initial 0.45, mid 1.05, late 0.95
+- potatoes: initial 0.5, mid 1.15, late 0.75
+- coffee: initial 0.9, mid 1.05, late 0.95
+- tomatoes: initial 0.6, mid 1.15, late 0.8
+- bananas: initial 0.5, mid 1.10, late 1.0
 
 Missing sensor values are substituted from Open-Meteo.
 """,
@@ -65,11 +97,12 @@ Missing sensor values are substituted from Open-Meteo.
         sw_wm2: float,
         daytime: bool = True,
     ) -> float:
-        t = float(temp_c)
-        rh = min(max(float(rh_pct), 0.0), 100.0)
-        u2 = max(float(wind_ms), 0.0)
-        p_kpa = float(pressure_hpa) / 10.0
-        rs = max(float(sw_wm2), 0.0) * 0.0864  # W/m² daily mean → MJ/m²/day
+        t = _safe_float(temp_c, 20.0, vmin=-10.0, vmax=60.0)
+        rh = _safe_float(rh_pct, 60.0, vmin=0.0, vmax=100.0)
+        u2 = _safe_float(wind_ms, 2.0, vmin=0.0, vmax=50.0)
+        pressure = _safe_float(pressure_hpa, 1013.0, vmin=700.0, vmax=1100.0)
+        p_kpa = pressure / 10.0
+        rs = _safe_float(sw_wm2, 300.0, vmin=0.0, vmax=2000.0) * 0.0864  # W/m² daily mean → MJ/m²/day
         rn = 0.77 * rs
         g = 0.1 * rn if daytime else 0.5 * rn
         es = 0.6108 * math.exp(17.27 * t / (t + 237.3))
@@ -79,6 +112,8 @@ Missing sensor values are substituted from Open-Meteo.
         numerator = 0.408 * delta * (rn - g) + gamma * (900.0 / (t + 273.0)) * u2 * (es - ea)
         denom = delta + gamma * (1.0 + 0.34 * u2)
         et0 = numerator / denom if denom else 0.0
+        if math.isnan(et0) or math.isinf(et0):
+            return 0.0
         return float(min(max(et0, 0.0), 15.0))
 
     def step(
@@ -113,10 +148,16 @@ Missing sensor values are substituted from Open-Meteo.
         }
         for field_name, om_key in mapping.items():
             flag = qc_flags.get(field_name, "OK")
-            if flag != "OK" and om_key in om_values and om_values[om_key] is not None:
-                fields[field_name] = float(om_values[om_key])
-                substituted.append(field_name)
-        kc_use = float(self.kc if kc is None else kc)
+            val = fields.get(field_name)
+            is_bad = flag != "OK" or val is None or (isinstance(val, float) and (math.isnan(val) or math.isinf(val)))
+            if is_bad and om_key in om_values and om_values[om_key] is not None:
+                om_val = om_values[om_key]
+                if not (isinstance(om_val, float) and math.isnan(om_val)):
+                    fields[field_name] = float(om_val)
+                    if field_name not in substituted:
+                        substituted.append(field_name)
+
+        kc_use = _safe_float(self.kc if kc is None else kc, default=1.0, vmin=0.05, vmax=3.0)
         et0 = self.et0_fao56(
             fields["temp_c"],
             fields["rh_pct"],
@@ -125,7 +166,10 @@ Missing sensor values are substituted from Open-Meteo.
             fields["sw_wm2"],
             daytime=daytime,
         )
-        unclamped = self.soil_water + float(rain_mm) - et0 * kc_use
+        safe_rain = _safe_float(rain_mm, default=0.0, vmin=0.0)
+        unclamped = self.soil_water + safe_rain - et0 * kc_use
+        if math.isnan(unclamped) or math.isinf(unclamped):
+            unclamped = self.soil_water
         clamped = min(max(unclamped, -150.0), 0.0)
         self.soil_water = clamped
         amount = max(0.0, abs(clamped)) if clamped < self.deficit_threshold else 0.0
@@ -155,15 +199,28 @@ Missing sensor values are substituted from Open-Meteo.
     @classmethod
     def plan_7day_schedule(
         cls,
-        current_advice: IrrigationAdvice,
+        current_advice: IrrigationAdvice | None = None,
         gold_df: Any = None,
         kc: float = 1.0,
     ) -> tuple[list[float], list[dict[str, Any]]]:
-        """
-        Generates a physically grounded 7-day irrigation schedule (in mm) under FAO-56
+        """Generates a physically grounded 7-day irrigation schedule (in mm) under FAO-56
+
         Penman-Monteith principles, accounting for daily reference ET0, phenological crop
         coefficients (Kc), forecasted precipitation events, and root-zone water balance.
         """
+        if current_advice is None:
+            current_advice = IrrigationAdvice(
+                et0_mm=3.5,
+                soil_water_mm=0.0,
+                soil_water_unclamped_mm=0.0,
+                irrigation_required=False,
+                irrigation_amount_mm=0.0,
+                action="No irrigation required",
+                kc=kc,
+            )
+
+        kc_clean = _safe_float(kc, default=1.0, vmin=0.05, vmax=3.0)
+
         # Synoptic weather cycle modulation for JKUAT microclimate (Juja, Kenya)
         # Includes a convective rainfall event on Day 3 to demonstrate precipitation suppression
         synoptic_patterns = [
@@ -182,17 +239,32 @@ Missing sensor values are substituted from Open-Meteo.
         base_wind = 2.2
 
         if gold_df is not None and hasattr(gold_df, "empty") and not gold_df.empty:
-            latest = gold_df.sort_values("timestamp_utc").iloc[-1]
-            base_temp = float(latest.get("temp_sht_c") or latest.get("om_temp") or base_temp)
-            base_rh = float(latest.get("humidity_sht_pct") or latest.get("om_rh") or base_rh)
-            sw = float(latest.get("si1145_visible") or 0) * (800 / 65535)
-            if sw > 50:
-                base_solar = sw
-            base_wind = float(latest.get("wind_speed_ms") or latest.get("om_wind") or base_wind)
+            try:
+                latest = gold_df.sort_values("timestamp_utc").iloc[-1]
+                t_val = latest.get("temp_sht_c") if latest.get("temp_sht_c") is not None else latest.get("om_temp")
+                base_temp = _safe_float(t_val, default=base_temp, vmin=10.0, vmax=45.0)
+
+                rh_val = (
+                    latest.get("humidity_sht_pct")
+                    if latest.get("humidity_sht_pct") is not None
+                    else latest.get("om_rh")
+                )
+                base_rh = _safe_float(rh_val, default=base_rh, vmin=15.0, vmax=100.0)
+
+                sw = _safe_float(latest.get("si1145_visible"), default=0.0) * (800.0 / 65535.0)
+                if sw > 50.0:
+                    base_solar = sw
+
+                w_val = (
+                    latest.get("wind_speed_ms") if latest.get("wind_speed_ms") is not None else latest.get("om_wind")
+                )
+                base_wind = _safe_float(w_val, default=base_wind, vmin=0.2, vmax=30.0)
+            except Exception:
+                pass
 
         daily_schedule: list[dict[str, Any]] = []
         plan_mm: list[float] = []
-        current_soil_water = float(current_advice.soil_water_mm)
+        current_soil_water = _safe_float(getattr(current_advice, "soil_water_mm", 0.0), default=0.0)
 
         for i, pattern in enumerate(synoptic_patterns):
             day_idx = i + 1
@@ -200,10 +272,10 @@ Missing sensor values are substituted from Open-Meteo.
             d_rh = min(max(base_rh + pattern["rh_adj"], 20.0), 98.0)
             d_solar = max(base_solar * pattern["solar_adj"], 80.0)
             d_wind = max(pattern["wind"], 0.5)
-            d_rain = pattern["rain"]
+            d_rain = max(pattern["rain"], 0.0)
 
             day_et0 = cls.et0_fao56(d_temp, d_rh, d_wind, 1013.0, d_solar)
-            day_etc = day_et0 * kc
+            day_etc = day_et0 * kc_clean
             peff = max(0.0, (d_rain - 2.0) * 0.8) if d_rain > 2.0 else 0.0
 
             if day_idx == 1 and current_advice.irrigation_required:
