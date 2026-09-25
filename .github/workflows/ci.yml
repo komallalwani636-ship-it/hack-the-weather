@@ -102,17 +102,28 @@ jobs:
         uses: actions/checkout@v4
 
       # -----------------------------------------------------------------------
+      # -----------------------------------------------------------------------
       # Step 1 — Deploy API to Render via deploy hook
       # -----------------------------------------------------------------------
       - name: Trigger Render redeploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
-          curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+          if [ -n "$RENDER_DEPLOY_HOOK_URL" ]; then
+            curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+          else
+            echo "RENDER_DEPLOY_HOOK_URL secret not set; skipping Render redeploy."
+          fi
 
       - name: Wait for Render service to become healthy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          RENDER_SERVICE_URL: ${{ secrets.RENDER_SERVICE_URL }}
         run: |
-          # Extract the base service URL from the deploy hook URL:
-          # hook format is https://api.render.com/deploy/<svc-id>?key=...
-          # The public service URL is a separate secret; poll /health directly.
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ] || [ -z "$RENDER_SERVICE_URL" ]; then
+            echo "Render secrets not configured; skipping health poll."
+            exit 0
+          fi
           echo "Waiting 30 s for Render to start the new deploy..."
           sleep 30
 
@@ -121,7 +132,7 @@ jobs:
           for i in $(seq 1 $ATTEMPTS); do
             echo "Health check attempt $i / $ATTEMPTS..."
             STATUS=$(curl -fsS -o /dev/null -w "%{http_code}" \
-              "${{ secrets.RENDER_SERVICE_URL }}/health" || echo "000")
+              "$RENDER_SERVICE_URL/health" || echo "000")
             if [ "$STATUS" = "200" ]; then
               echo "Render service is healthy (HTTP 200)."
               exit 0
@@ -141,30 +152,24 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel@latest
-
-      - name: Install web dependencies
-        run: npm ci
+      - name: Install web dependencies & verify build
+        run: |
+          npm ci
+          npm run build
         working-directory: web
 
-      - name: Pull Vercel environment / project config
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-        working-directory: web
+      - name: Deploy frontend to Vercel
         env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
-      - name: Build for production
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -n "$VERCEL_TOKEN" ]; then
+            npm install -g vercel@latest
+            vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+            vercel build --prod --token=$VERCEL_TOKEN
+            vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+          else
+            echo "VERCEL_TOKEN secret not set; frontend build verified, skipping Vercel push."
+          fi
         working-directory: web
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
-      - name: Deploy prebuilt output to Vercel
-        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
-        working-directory: web
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
