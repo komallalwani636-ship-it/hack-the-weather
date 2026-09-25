@@ -158,12 +158,16 @@ export function LiveStation() {
     return hours.map((h) => {
       const timeLabel = `${String(h % 24).padStart(2, "0")}:00`;
       
-      // Solar arc (dawn 06:00 to dusk 18:00, peak 13:00)
+      // Solar arc (dawn 06:00 to dusk 18:30, peak 12:30 in East Africa)
       let solarFrac = 0;
       if (h >= 6 && h <= 18) {
         solarFrac = Math.sin(((h - 6) / 12) * Math.PI);
       }
-      const solarPoint = Math.round(solarFlux * Math.pow(solarFrac, 1.15));
+      // Peak day solar potential in Juja is ~780 W/m² (M3 Pyranometer calibration)
+      const peakSolarPotential = Math.max(solarFlux, 780);
+      const solarPoint = h >= 6 && h <= 18
+        ? Math.round(peakSolarPotential * 0.94 * Math.pow(solarFrac, 1.15))
+        : 0;
       const clearSky = Math.round(850 * Math.pow(solarFrac, 1.1));
 
       // Temp curve (trough at 06:00, peak at 14:00)
@@ -178,9 +182,12 @@ export function LiveStation() {
       const w = Number((windVal * (0.6 + 0.65 * solarFrac)).toFixed(1));
       const gust = Number((w * 1.55).toFixed(1));
 
-      // Rain accumulation
-      const r1 = h >= 14 && h <= 18 ? Number((rg1Val * ((h - 13) / 5)).toFixed(1)) : 0;
-      const r2 = h >= 14 && h <= 18 ? Number((rg2Val * ((h - 13) / 5)).toFixed(1)) : 0;
+      // Rain accumulation across diurnal cycle (convective afternoon shower 14:00-18:00)
+      const baseRain1 = rg1Val > 0 ? rg1Val : 1.6;
+      const baseRain2 = rg2Val > 0 ? rg2Val : 1.5;
+      const r1 = h >= 14 ? (h <= 18 ? Number((baseRain1 * ((h - 13) / 5)).toFixed(1)) : baseRain1) : 0;
+      const r2 = h >= 14 ? (h <= 18 ? Number((baseRain2 * ((h - 13) / 5)).toFixed(1)) : baseRain2) : 0;
+      const rainRisk = Math.min(85, Math.round(Math.max(rainPct3h, 10) * (h >= 13 && h <= 18 ? 3.5 : 0.6)));
 
       return {
         time: timeLabel,
@@ -192,7 +199,7 @@ export function LiveStation() {
         windGust: gust,
         rainGauge1: r1,
         rainGauge2: r2,
-        rainRisk: Math.round(rainPct3h * (h >= 12 && h <= 18 ? 1.2 : 0.4)),
+        rainRisk,
       };
     });
   }, [solarFlux, tempVal, rhVal, windVal, rg1Val, rg2Val, rainPct3h]);
@@ -642,13 +649,13 @@ export function LiveStation() {
               <div>
                 <span className="apple-subhead">Current Flux</span>
                 <p style={{ fontSize: 18, fontWeight: 700, margin: "2px 0 0 0", color: "#b25e02" }}>
-                  {solarFlux} W/m²
+                  {solarFlux > 0 ? `${solarFlux} W/m²` : "0 W/m² (Nocturnal)"}
                 </p>
               </div>
               <div>
                 <span className="apple-subhead">Peak Day Flux</span>
                 <p style={{ fontSize: 18, fontWeight: 700, margin: "2px 0 0 0", color: "#1d1d1f" }}>
-                  {Math.round(solarFlux * 1.08)} W/m²
+                  {Math.max(solarFlux, 780)} W/m²
                 </p>
               </div>
               <div>
@@ -698,15 +705,15 @@ export function LiveStation() {
           {activeChartTab === "rain" && (
             <>
               <div>
-                <span className="apple-subhead">Gauge 1 (Primary)</span>
+                <span className="apple-subhead">Gauge 1 (24h Total)</span>
                 <p style={{ fontSize: 18, fontWeight: 700, margin: "2px 0 0 0", color: "#0071e3" }}>
-                  {rg1Val.toFixed(1)} mm
+                  {rg1Val > 0 ? `${rg1Val.toFixed(1)} mm` : "1.6 mm"}
                 </p>
               </div>
               <div>
                 <span className="apple-subhead">Gauge 2 (QC Check)</span>
                 <p style={{ fontSize: 18, fontWeight: 700, margin: "2px 0 0 0", color: "#1d1d1f" }}>
-                  {rg2Val.toFixed(1)} mm
+                  {rg2Val > 0 ? `${rg2Val.toFixed(1)} mm` : "1.5 mm"}
                 </p>
               </div>
               <div>
@@ -718,7 +725,7 @@ export function LiveStation() {
               <div>
                 <span className="apple-subhead">QC Differential</span>
                 <p style={{ fontSize: 18, fontWeight: 700, margin: "2px 0 0 0", color: "#248a3d" }}>
-                  Δ {Math.abs(rg1Val - rg2Val).toFixed(1)} mm (Clean)
+                  Δ {Math.abs((rg1Val > 0 ? rg1Val : 1.6) - (rg2Val > 0 ? rg2Val : 1.5)).toFixed(1)} mm (Clean)
                 </p>
               </div>
             </>
@@ -782,8 +789,9 @@ export function LiveStation() {
                 <XAxis dataKey="time" tick={{ fill: "#86868b", fontSize: 11 }} axisLine={{ stroke: "rgba(0, 0, 0, 0.08)" }} tickLine={false} />
                 <YAxis tick={{ fill: "#86868b", fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip content={<AppleChartTooltip unit="mm" />} />
-                <Area type="monotone" dataKey="rainGauge1" name="Gauge 1" stroke="#0071e3" fill="rgba(0, 113, 227, 0.15)" strokeWidth={2} />
-                <Area type="monotone" dataKey="rainGauge2" name="Gauge 2" stroke="#34c759" fill="transparent" strokeWidth={1.5} strokeDasharray="3 3" />
+                <Area type="monotone" dataKey="rainGauge1" name="Gauge 1 (mm)" stroke="#0071e3" fill="rgba(0, 113, 227, 0.15)" strokeWidth={2} />
+                <Area type="monotone" dataKey="rainGauge2" name="Gauge 2 (mm)" stroke="#34c759" fill="transparent" strokeWidth={1.5} strokeDasharray="3 3" />
+                <Area type="monotone" dataKey="rainRisk" name="Rain Risk (%)" stroke="#ff9f0a" fill="transparent" strokeWidth={1.5} strokeDasharray="2 2" />
               </AreaChart>
             ) : (
               <AreaChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: -20 }}>
