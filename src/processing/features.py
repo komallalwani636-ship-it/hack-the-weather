@@ -80,7 +80,15 @@ class FeatureEngineer:
         if gust is not None and wind is not None:
             mean_wind = wind.rolling("30min", min_periods=1).mean()
             max_gust = gust.rolling("30min", min_periods=1).max()
-            ratio = np.where(mean_wind.to_numpy() == 0, -1.0, max_gust.to_numpy() / mean_wind.to_numpy())
+            mean_arr = mean_wind.to_numpy()
+            gust_arr = max_gust.to_numpy()
+            with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+                ratio = np.divide(
+                    gust_arr,
+                    mean_arr,
+                    out=np.full_like(gust_arr, -1.0, dtype=float),
+                    where=(mean_arr > 1e-6),
+                )
             idx["wind_gust_ratio"] = ratio
         else:
             idx["wind_gust_ratio"] = np.nan

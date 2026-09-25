@@ -49,10 +49,13 @@ class IrrigationResponse(BaseModel):
     crop: Optional[str] = None
     stage: Optional[str] = None
     plan_mm: list[float] = Field(default_factory=list)
+    daily_schedule: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AssistantRequest(BaseModel):
     question: str
+    api_key: Optional[str] = None
+    provider: Optional[str] = None
 
 
 class AssistantResponse(BaseModel):
@@ -74,4 +77,3 @@ class SimulationRequest(BaseModel):
     pressure_hpa: Optional[float] = None
     crop: Optional[str] = "maize"
     stage: Optional[str] = "mid"
-

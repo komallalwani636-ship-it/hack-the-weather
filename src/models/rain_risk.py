@@ -109,9 +109,15 @@ class RainRiskModel:
         warning = "Open-Meteo features missing" if om_missing else None
         rain_3h = _num(feature_vector.get("rain_3h")) or 0.0
         rain_24h = _num(feature_vector.get("rain_24h")) or 0.0
-        # Persistence baseline always available; LightGBM used when trained.
-        p3 = float(np.clip(rain_3h / 5.0, 0.0, 1.0))
-        p24 = float(np.clip(rain_24h / 20.0, 0.0, 1.0))
+        # Persistence baseline combined with NWP precipitation probability
+        om_p = _num(feature_vector.get("om_precip_prob"))
+        om_norm = (om_p / 100.0 if om_p > 1.0 else om_p) if om_p is not None else 0.0
+        persist_3h = float(np.clip(rain_3h / 5.0, 0.0, 1.0))
+        persist_24h = float(np.clip(rain_24h / 20.0, 0.0, 1.0))
+
+        p3 = max(persist_3h, om_norm)
+        p24 = max(persist_24h, min(1.0, om_norm * 1.3 if om_norm > 0 else 0.0))
+
         if self.trained and self.model_3h is not None:
             x = self._vector(feature_vector).reshape(1, -1)
             x = np.nan_to_num(x, nan=0.0)

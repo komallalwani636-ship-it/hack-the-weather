@@ -1,9 +1,12 @@
 import { AnimatePresence, motion } from "framer-motion";
+import { useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { ClimateSimulatorModal } from "./components/ClimateSimulatorModal";
 import { NavigationBar } from "./components/NavigationBar";
 import { useApp } from "./context/AppContext";
 import { AlertsFeed } from "./pages/AlertsFeed";
 import { AskSentinel } from "./pages/AskSentinel";
+import { FarmerDispatch } from "./pages/FarmerDispatch";
 import { HowItWorks } from "./pages/HowItWorks";
 import { IrrigationPlanner } from "./pages/IrrigationPlanner";
 import { LiveStation } from "./pages/LiveStation";
@@ -18,10 +21,12 @@ const pageVariants = {
 export default function App() {
   const { state, resetSimulation } = useApp();
   const location = useLocation();
+  const [simulatorOpen, setSimulatorOpen] = useState(false);
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0a0a0a" }}>
-      <NavigationBar />
+    <div style={{ minHeight: "100vh", background: "#f5f5f7", color: "#1d1d1f" }}>
+      <NavigationBar onOpenSimulator={() => setSimulatorOpen(true)} />
+      <ClimateSimulatorModal isOpen={simulatorOpen} onClose={() => setSimulatorOpen(false)} />
 
       {/* Simulation banner */}
       <AnimatePresence>
@@ -34,8 +39,9 @@ export default function App() {
           >
             <div
               style={{
-                background: "#140f00",
-                borderBottom: "1px solid rgba(245,158,11,0.2)",
+                background: "rgba(255, 159, 10, 0.12)",
+                backdropFilter: "blur(16px)",
+                borderBottom: "1px solid rgba(255, 159, 10, 0.25)",
                 padding: "8px 24px",
                 display: "flex",
                 alignItems: "center",
@@ -43,15 +49,23 @@ export default function App() {
                 maxWidth: "none",
               }}
             >
-              <span style={{ fontSize: 12, color: "#f59e0b" }}>
-                <strong>Simulation mode</strong> — {state.simulatedScenario}. Data shown is synthetic.
+              <span style={{ fontSize: 12, color: "#b25e02", fontWeight: 600 }}>
+                <strong>SIMULATION ACTIVE</strong> — {state.simulatedScenario}. Synthetic telemetry broadcast for stress testing.
               </span>
               <button
-                className="btn btn-ghost"
-                style={{ padding: "4px 12px", fontSize: 11 }}
+                style={{
+                  padding: "4px 12px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  borderRadius: 6,
+                  background: "#1d1d1f",
+                  color: "#ffffff",
+                  border: "none",
+                  cursor: "pointer",
+                }}
                 onClick={resetSimulation}
               >
-                Exit simulation
+                Exit Simulation
               </button>
             </div>
           </motion.div>
@@ -62,15 +76,17 @@ export default function App() {
       {!state.apiAvailable && !state.isSimulated && (
         <div
           style={{
-            background: "#1a0a00",
-            borderBottom: "1px solid rgba(239,68,68,0.2)",
+            background: "rgba(255, 59, 48, 0.08)",
+            backdropFilter: "blur(16px)",
+            borderBottom: "1px solid rgba(255, 59, 48, 0.2)",
             padding: "8px 24px",
             fontSize: 12,
-            color: "#f87171",
+            fontWeight: 600,
+            color: "#d70015",
             textAlign: "center",
           }}
         >
-          Backend unavailable — showing cached data
+          Backend offline at 127.0.0.1:8000 — displaying cached observations
         </div>
       )}
 
@@ -88,6 +104,7 @@ export default function App() {
               <Route path="/map"          element={<MapView />} />
               <Route path="/irrigation"   element={<IrrigationPlanner />} />
               <Route path="/alerts"       element={<AlertsFeed />} />
+              <Route path="/dispatch"     element={<FarmerDispatch />} />
               <Route path="/ask"          element={<AskSentinel />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
               <Route path="*"             element={<Navigate to="/" />} />

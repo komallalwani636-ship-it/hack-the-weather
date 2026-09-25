@@ -8,6 +8,7 @@ import time
 # Load .env on startup so GEMINI_API_KEY etc. are available without shell export
 try:
     from dotenv import load_dotenv
+
     load_dotenv(override=False)
 except ImportError:
     pass
@@ -24,7 +25,6 @@ from src.decision.rules import DecisionEngine
 from src.llm.explainer import LLMExplainer
 from src.models.et0 import DEFAULT_KC, ET0Model
 from src.models.heat import HeatStressModel
-from src.models.rain_risk import RainRiskModel
 
 app = FastAPI(title="Conduit Sentinel", version="0.1.0")
 store = AppStore()
@@ -185,7 +185,11 @@ def risk_rain():
 def irrigation(crop: str = "maize", stage: str = "mid"):
     kc = DEFAULT_KC.get(crop, DEFAULT_KC["maize"]).get(stage, 1.0)
     advice = store.irrigation
-    plan = [max(0.0, abs(advice.soil_water_mm) * (kc / max(advice.kc, 1e-6)) / 7.0)] * 7
+    plan_mm, daily_schedule = ET0Model.plan_7day_schedule(
+        current_advice=advice,
+        gold_df=store.gold,
+        kc=kc,
+    )
     date = datetime.now(tz=timezone.utc).date().isoformat()
     return {
         "et0_today_mm": advice.et0_mm,
@@ -202,8 +206,10 @@ def irrigation(crop: str = "maize", stage: str = "mid"):
         "date_utc": date,
         "crop": crop,
         "stage": stage,
-        "plan_mm": plan,
+        "plan_mm": plan_mm,
+        "daily_schedule": daily_schedule,
     }
+
 
 
 @app.get("/advisories")
@@ -215,7 +221,11 @@ def advisories():
 
 @app.post("/assistant")
 def assistant(body: AssistantRequest):
-    result = _explainer().explain(body.question)
+    result = _explainer().explain(
+        body.question,
+        api_key=body.api_key,
+        provider_preference=body.provider,
+    )
     return {
         "answer": result.answer,
         "response_type": result.response_type,
@@ -329,7 +339,7 @@ def simulate(req: SimulationRequest):
     qc_flags["humidity_sht_pct"] = "RANGE_FAIL" if not (0.0 <= rh <= 100.0) else "OK"
     qc_flags["pressure_hpa"] = "RANGE_FAIL" if not (800.0 <= press <= 1100.0) else "OK"
     qc_flags["wind_speed_ms"] = "RANGE_FAIL" if not (0.0 <= wind <= 60.0) else "OK"
-    
+
     # Rain gauge cross check
     if abs(rg1 - rg2) > 2.0:
         qc_flags["rain_gauge_1_mm"] = "CROSS_FAIL"
@@ -349,7 +359,7 @@ def simulate(req: SimulationRequest):
     crop = req.crop or "maize"
     stage = req.stage or "mid"
     kc = DEFAULT_KC.get(crop, DEFAULT_KC["maize"]).get(stage, 1.0)
-    
+
     soil_water = base["soil_water_mm"]
     deficit_threshold = -20.0
     irrigation_required = soil_water < deficit_threshold
@@ -380,8 +390,16 @@ def simulate(req: SimulationRequest):
         "humidity_sht_pct": {"value": rh, "qc_flag": qc_flags["humidity_sht_pct"], "anomaly_score": 0.0},
         "pressure_hpa": {"value": press, "qc_flag": qc_flags["pressure_hpa"], "anomaly_score": 0.0},
         "wind_speed_ms": {"value": wind, "qc_flag": qc_flags["wind_speed_ms"], "anomaly_score": 0.0},
-        "rain_gauge_1_mm": {"value": rg1, "qc_flag": qc_flags["rain_gauge_1_mm"], "anomaly_score": 0.8 if qc_flags["rain_gauge_1_mm"] != "OK" else 0.0},
-        "rain_gauge_2_mm": {"value": rg2, "qc_flag": qc_flags["rain_gauge_2_mm"], "anomaly_score": 0.8 if qc_flags["rain_gauge_2_mm"] != "OK" else 0.0},
+        "rain_gauge_1_mm": {
+            "value": rg1,
+            "qc_flag": qc_flags["rain_gauge_1_mm"],
+            "anomaly_score": 0.8 if qc_flags["rain_gauge_1_mm"] != "OK" else 0.0,
+        },
+        "rain_gauge_2_mm": {
+            "value": rg2,
+            "qc_flag": qc_flags["rain_gauge_2_mm"],
+            "anomaly_score": 0.8 if qc_flags["rain_gauge_2_mm"] != "OK" else 0.0,
+        },
         "wbgt_c": {"value": wbgt, "qc_flag": "OK", "anomaly_score": 0.0},
         "si1145_visible": {"value": int(solar * (65535 / 800)), "qc_flag": "OK", "anomaly_score": 0.0},
     }
@@ -404,4 +422,3 @@ def simulate(req: SimulationRequest):
         "qc_flags": qc_flags,
         "timestamp_utc": datetime.now(tz=timezone.utc).isoformat(),
     }
-

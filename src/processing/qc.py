@@ -237,6 +237,12 @@ class QCModule:
             if len(vals) >= FLATLINE_COUNT:
                 tail = vals[-FLATLINE_COUNT:]
                 if max(tail) - min(tail) < FLATLINE_DELTA:
+                    # In physical meteorology, rain gauges resting at 0.0 mm during dry weather
+                    # or solar pyranometers reading 0 at night are normal physical states, not hardware failures!
+                    if col in ("rain_gauge_1_mm", "rain_gauge_2_mm") and max(tail) == 0.0:
+                        continue
+                    if col.startswith("si1145_") and max(tail) == 0:
+                        continue
                     flags[col] = QCFlag.FLATLINE.value
 
     def report(self, records: list[SilverRecord] | None = None) -> pd.DataFrame:
