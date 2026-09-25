@@ -94,10 +94,10 @@ const SECTORS: AgriculturalSector[] = [
 ];
 
 const TILE_LAYERS = {
-  carto: {
+  esriLight: {
     label: "Apple Light",
-    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-    attr: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    attr: '&copy; <a href="https://www.esri.com/">Esri</a>, HERE, Garmin, &copy; OpenStreetMap',
   },
   satellite: {
     label: "Satellite Aerial",
@@ -107,7 +107,7 @@ const TILE_LAYERS = {
   osm: {
     label: "OpenStreetMap",
     url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attr: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    attr: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   },
 };
 
@@ -165,7 +165,7 @@ function stationBeaconIcon() {
 
 export function MapView() {
   const { state } = useApp();
-  const [activeTile, setActiveTile] = useState<keyof typeof TILE_LAYERS>("carto");
+  const [activeTile, setActiveTile] = useState<keyof typeof TILE_LAYERS>("esriLight");
   const [activeOverlay, setActiveOverlay] = useState<"all" | "irrigation" | "rain" | "spray">("all");
   const [selectedSector, setSelectedSector] = useState<AgriculturalSector | null>(SECTORS[0]);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
